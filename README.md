@@ -1,12 +1,12 @@
-# Deferred-Shading-Demo
+# Ambient Occlusion Demo
 
-Deferred Shading Algorithm in OpenGL4
+Voxel based ambient occlusion using OGL4.
 
 
 ## Compilation
 
 Requires opengl4, glew and glfw3.
 
-Other dependencies are includes (lodepng, tiny_obj_loader and glm).
+Other dependencies are included (lodepng, tiny_obj_loader and glm).
 
 To compile, run `make`.

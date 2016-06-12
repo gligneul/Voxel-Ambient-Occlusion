@@ -40,6 +40,7 @@
 #include "ShaderProgram.h"
 #include "UniformBuffer.h"
 #include "VertexArray.h"
+#include "Texture1D.h"
 
 // Materials
 enum MaterialID { OBJECT_MATERIAL, GROUND_MATERIAL };
@@ -48,8 +49,12 @@ enum MaterialID { OBJECT_MATERIAL, GROUND_MATERIAL };
 int window_w = 1280;
 int window_h = 720;
 
+// Near and far planes
+const float NEAR = 0.1;
+const float FAR = 10.0;
+
 // Object path
-const char *object_path = "data/uh60.obj";
+const char *object_path = "data/dragon.obj";
 
 // Global Helpers
 ShaderProgram geompass_shader;
@@ -62,11 +67,20 @@ UniformBuffer object_matrices;
 std::vector<VertexArray> object_meshes;
 Manipulator manipulator;
 
+// Voxel depth LUT
+Texture1D voxel_depth_lut;
+
+// Voxelization shader
+ShaderProgram voxel_shader;
+
+// Voxel map
+FrameBuffer slice_map;
+
 // Global matrices
 glm::mat4 view;
 glm::mat4 projection;
 
-// Model matrix
+// Model matrices
 glm::mat4 light_model;
 glm::mat4 object_model;
 
@@ -81,7 +95,7 @@ bool object_rotation = false;
 glm::vec4 light_position(10.0, 1.0, 0.0, 0.1);
 
 // Camera config
-glm::vec3 eye(0.0, 0.0, 3.0);
+glm::vec3 eye(0.0, 0.0, 2.0);
 glm::vec3 center(0.0, 0.0, 0.0);
 glm::vec3 up(0.0, 1.0, 0.0);
 
@@ -112,6 +126,17 @@ void LoadFramebuffer() {
   }
 }
 
+// Creates the slice map used for voxelization
+void LoadSliceMap() {
+  slice_map.Init(window_w, window_h);
+  slice_map.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT);
+  try {
+    slice_map.Verify();
+  } catch (std::exception &e) {
+    Assertf(false, "%s", e.what());
+  }
+}
+
 // Loads the geometry pass and lighting pass shaders
 void LoadShaders() {
   try {
@@ -121,9 +146,28 @@ void LoadShaders() {
     lightpass_shader.LoadVertexShader("shaders/lightpass_vs.glsl");
     lightpass_shader.LoadFragmentShader("shaders/lightpass_fs.glsl");
     lightpass_shader.LinkShader();
+    voxel_shader.LoadVertexShader("shaders/geompass_vs.glsl");
+    voxel_shader.LoadFragmentShader("shaders/voxel_fs.glsl");
+    voxel_shader.LinkShader();
   } catch (std::exception &e) {
     Assertf(false, "%s", e.what());
   }
+}
+
+// Creates the voxel depth lookup texture
+void CreateVoxelDepthLUT() {
+  const int N = 128;
+  const int CHANNEL_SIZE = 32;
+  const int N_CHANNELS = N / CHANNEL_SIZE;
+  uint32_t lut[N * N_CHANNELS] = {0};
+  for (int i = 0; i < N; ++i) {
+    for (int j = 0; j < i; ++j) {
+        int voxel = 1 << j % CHANNEL_SIZE;
+        lut[i * N_CHANNELS + j / CHANNEL_SIZE] |= voxel;
+    }
+  }
+  voxel_depth_lut.LoadTexture(lut, N, GL_RGBA32UI, GL_RGBA_INTEGER,
+                              GL_UNSIGNED_INT);
 }
 
 // Loads the materials
@@ -272,7 +316,7 @@ void UpdateObjectMatrices() {
 void UpdateMatrices() {
   view = glm::lookAt(eye, center, up) * manipulator.GetMatrix();
   auto ratio = (float)window_w / (float)window_h;
-  projection = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 10.0f);
+  projection = glm::perspective(glm::radians(60.0f), ratio, NEAR, FAR);
   UpdateObjectMatrices();
 }
 
@@ -283,19 +327,60 @@ void LoadGlobalConfiguration() {
   glEnable(GL_MULTISAMPLE);
 }
 
+// Renders the slice map
+void RenderSliceMap() {
+  glPushAttrib(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+  slice_map.Bind();
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_COLOR_LOGIC_OP);
+  glLogicOp(GL_XOR);
+  glClear(GL_COLOR_BUFFER_BIT);
+  voxel_shader.Enable();
+  voxel_shader.SetUniform("near", NEAR);
+  voxel_shader.SetUniform("far", FAR);
+  voxel_shader.SetTexture1D("voxel_depth_lut", 0, voxel_depth_lut.GetId());
+  voxel_shader.SetUniformBuffer("MatricesBlock", 0, object_matrices.GetId());
+  for (auto& mesh : object_meshes) {
+    mesh.DrawElements(GL_TRIANGLES);
+  }
+  voxel_shader.Disable();
+  slice_map.Unbind();
+  glPopAttrib();
+
+#if 0
+  // Obtains the texture and prints it
+  uint32_t pixels[window_w * window_h * 4] = {0};
+  glBindTexture(GL_TEXTURE_2D, slice_map.GetTextures()[0]);
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, pixels);
+  printf("--------------------\n");
+  for (int j = 0; j < window_h; ++j) {
+    int i = window_w / 2;
+    for (int k = 0; k < 128; ++k) {
+      uint32_t voxel =
+          (pixels[j * window_w * 4 + i * 4 + k / 32] >> k % 32) & 1;
+      printf("%d", voxel);
+    }
+    printf("\n");
+  }
+  exit(0);
+#endif
+}
+
 // Renders the geometry pass
 void RenderGeometry() {
+  framebuffer.Bind();
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   geompass_shader.Enable();
   UpdateLightsBuffer();
 
-  geompass_shader.SetUniformBuffer("MatricesBlock", 0, object_matrices.GetId());
   geompass_shader.SetUniform("material_id", OBJECT_MATERIAL);
+  geompass_shader.SetUniformBuffer("MatricesBlock", 0, object_matrices.GetId());
   for (auto& mesh : object_meshes) {
     mesh.DrawElements(GL_TRIANGLES);
   }
 
   geompass_shader.Disable();
+  framebuffer.Unbind();
 }
 
 // Renders the lighting pass
@@ -318,9 +403,8 @@ void RenderLighting() {
 
 // Display callback, renders the scene
 void Render() {
-  framebuffer.Bind();
+  RenderSliceMap();
   RenderGeometry();
-  framebuffer.Unbind();
   RenderLighting();
 }
 
@@ -349,6 +433,7 @@ void Resize(GLFWwindow *window) {
   window_h = height;
   glViewport(0, 0, width, height);
   framebuffer.Resize(width, height);
+  slice_map.Resize(width, height);
 }
 
 // Called each frame
@@ -439,6 +524,7 @@ GLFWwindow *InitGLFW(int argc, char *argv[]) {
   glfwSetKeyCallback(window, Keyboard);
   glfwSetMouseButtonCallback(window, Mouse);
   glfwSetCursorPosCallback(window, Motion);
+  glfwSwapInterval(0);
   return window;
 }
 
@@ -452,7 +538,9 @@ void InitGLEW() {
 void InitApplication() {
   LoadGlobalConfiguration();
   LoadFramebuffer();
+  LoadSliceMap();
   LoadShaders();
+  CreateVoxelDepthLUT();
   CreateMaterialsBuffer();
   LoadScreenQuad();
   LoadObjectMesh();

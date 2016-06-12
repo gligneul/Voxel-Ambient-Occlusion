@@ -59,7 +59,7 @@ layout (std140) uniform MaterialsBlock {
 };
 
 // Background color
-const vec3 background = vec3(0.682, 0.91, 0.984);
+const vec3 background = vec3(0.435, 0.62, 0.984);
 
 // Screen texture coordinates
 in vec2 frag_textcoord;

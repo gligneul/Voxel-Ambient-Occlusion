@@ -110,6 +110,13 @@ void ShaderProgram::SetUniform(const std::string& name,
   glUniformMatrix4fv(location, 1, false, glm::value_ptr(value));
 }
 
+void ShaderProgram::SetTexture1D(const std::string& name, int sampler_id,
+                                 int texture_id) {
+  glActiveTexture(GL_TEXTURE0 + sampler_id);
+  glBindTexture(GL_TEXTURE_1D, texture_id);
+  SetUniform(name, sampler_id);
+}
+
 void ShaderProgram::SetTexture2D(const std::string& name, int sampler_id,
                                  int texture_id) {
   glActiveTexture(GL_TEXTURE0 + sampler_id);

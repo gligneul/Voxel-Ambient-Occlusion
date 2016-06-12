@@ -82,6 +82,7 @@ public:
   /**
    * Binds a texture to a sampler
    */
+  void SetTexture1D(const std::string& name, int sampler_id, int texture_id);
   void SetTexture2D(const std::string& name, int sampler_id, int texture_id);
 
   /**

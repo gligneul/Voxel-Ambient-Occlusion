@@ -22,8 +22,7 @@
  * SOFTWARE.
  */
 
-#ifndef MANIPULATOR_H
-#define MANIPULATOR_H
+#pragma once
 
 #include <array>
 
@@ -90,6 +89,4 @@ private:
     bool invertX_, invertY_;
     float ball_size_;
 };
-
-#endif
 

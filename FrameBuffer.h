@@ -22,8 +22,7 @@
  * SOFTWARE.
  */
 
-#ifndef FRAMEBUFFER_H
-#define FRAMEBUFFER_H
+#pragma once
 
 #include <vector>
 
@@ -79,6 +78,4 @@ private:
   std::vector<unsigned int> textures_;
   std::vector<TextureInfo> textures_infos_;
 };
-
-#endif
 
