@@ -39,9 +39,10 @@ in vec3 frag_normal;
 layout(location = 0) out uvec4 voxels;
 
 void main() {
-    float z_ws = gl_FragCoord.z;
-    float z_vs = 1 / ((1 / far - 1 / near) * z_ws + 1 / near);
-    float z = (z_vs - near) / (far - near);
+//    float z_vs = 1 / ((1 / far - 1 / near) * z_ws + 1 / near);
+//    float z = (z_vs - near) / (far - near);
+    float Z = gl_FragCoord.z;
+    float z = -(near * Z) / (far * Z - far - near * Z);
     voxels = texture(voxel_depth_lut, z);
 }
 
