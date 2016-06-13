@@ -36,13 +36,19 @@ in vec3 frag_position;
 in vec3 frag_normal;
 
 // Geometry output
-layout(location = 0) out uvec4 voxels;
+out uvec4 voxels[8];
 
 void main() {
 //    float z_vs = 1 / ((1 / far - 1 / near) * z_ws + 1 / near);
 //    float z = (z_vs - near) / (far - near);
     float Z = gl_FragCoord.z;
     float z = -(near * Z) / (far * Z - far - near * Z);
-    voxels = texture(voxel_depth_lut, z);
+    float slice_postion = z * 8;
+    int colorbuffer_idx = int(slice_postion);
+    for (int i = 0; i < colorbuffer_idx; ++i)
+        voxels[i] = uvec4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+    voxels[colorbuffer_idx] = texture(voxel_depth_lut, fract(slice_postion));
+    for (int i = colorbuffer_idx + 1; i < 8; ++i)
+        voxels[i] = uvec4(0, 0, 0, 0);
 }
 

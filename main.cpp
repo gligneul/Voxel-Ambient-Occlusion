@@ -151,7 +151,10 @@ void LoadFramebuffer() {
 // Creates the framebuffer used for voxelization
 void LoadSliceMap() {
   voxel_framebuffer.Init(window_w, window_h);
-  voxel_framebuffer.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER, GL_UNSIGNED_INT);
+  for (int i = 0; i < 8; ++i) {
+    voxel_framebuffer.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER,
+                                      GL_UNSIGNED_INT);
+  }
   try {
     voxel_framebuffer.Verify();
   } catch (std::exception &e) {
@@ -378,7 +381,10 @@ void RenderSliceForDebug() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   slice_shader.Enable();
   auto &texts = voxel_framebuffer.GetTextures();
-  slice_shader.SetTexture2D("slice_map", 0, texts[0]);
+  for (int i = 0; i < 8; ++i) {
+    auto name = "slice_map[" + std::to_string(i) + "]";
+    slice_shader.SetTexture2D(name, i, texts[i]);
+  }
   screen_quad.DrawElements(GL_QUADS);
   slice_shader.Disable();
 }

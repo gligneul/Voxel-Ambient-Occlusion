@@ -25,10 +25,10 @@
 #version 450
 
 // Transversal slice position
-const float slice = 0.5;
+const float x_slice = 0.5;
 
 // Slice map
-uniform usampler2D slice_map;
+uniform usampler2D slice_map[8];
 
 // Screen texture coordinates
 in vec2 frag_textcoord;
@@ -37,9 +37,10 @@ in vec2 frag_textcoord;
 out vec3 color;
 
 void main() {
-    vec2 column_coord = vec2(slice, frag_textcoord.y);
-    uvec4 column = texture(slice_map, column_coord);
-    int voxel_idx = int(frag_textcoord.x * 128);
+    float slice_position = frag_textcoord.x * 8;
+    vec2 column_coord = vec2(x_slice, frag_textcoord.y);
+    uvec4 column = texture(slice_map[int(slice_position)], column_coord);
+    int voxel_idx = int(fract(slice_position) * 128);
     uint voxel = (column[voxel_idx / 32] >> voxel_idx % 32 ) & 1;
     float c = voxel == 1 ? 1.0 : 0.0;
     color = vec3(c, c, c);
