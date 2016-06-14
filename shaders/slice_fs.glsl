@@ -1,18 +1,19 @@
 /*
  * The MIT License (MIT)
- * 
+ *
  * Copyright (c) 2016 Gabriel de Quadros Ligneul
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in all
+ *
+ * The above copyright notice and this permission notice shall be included in
+ *all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -37,12 +38,12 @@ in vec2 frag_textcoord;
 out vec3 color;
 
 void main() {
-    float slice_position = frag_textcoord.x * 8;
-    vec2 column_coord = vec2(x_slice, frag_textcoord.y);
-    uvec4 column = texture(slice_map[int(slice_position)], column_coord);
-    int voxel_idx = int(fract(slice_position) * 128);
-    uint voxel = (column[voxel_idx / 32] >> voxel_idx % 32 ) & 1;
-    float c = voxel == 1 ? 1.0 : 0.0;
-    color = vec3(c, c, c);
+  float slice_position = frag_textcoord.x * 8;
+  vec2 column_coord = vec2(x_slice, frag_textcoord.y);
+  uvec4 column = texture(slice_map[int(slice_position)], column_coord);
+  int voxel_idx = int(fract(slice_position) * 128);
+  uint voxel = (column[voxel_idx / 32] >> voxel_idx % 32) & 1;
+  float c = voxel == 1 ? 1.0 : 0.0;
+  color = vec3(c, c, c);
 }
 

@@ -50,13 +50,21 @@ enum MaterialID { OBJECT_MATERIAL };
 
 // Near and far planes
 const float NEAR = 0.1;
-const float FAR = 7.0;
+const float FAR = 5.0;
 
 // The main Object path
 const char *OBJECT_PATH = "data/dragon.obj";
 
 // Rotation speed
 const float ROTATION_SPEED = 100.0f;
+
+// Description of the program controls
+const char *HELP_TEXT =
+"Controls:\n"
+"  a: enables only the ambient lighting\n"
+"  d: slice map debug view\n"
+"  l: rotates the light\n"
+"  o: rotates the object\n";
 
 // Window size
 int window_w = 1280;
@@ -109,6 +117,9 @@ glm::mat4 projection;
 glm::mat4 light_model;
 glm::mat4 object_model;
 
+// Mapping matrix, transform from clip to window space
+glm::mat4 mapping_matrix;
+
 // Light position
 glm::vec4 light_position(10.0, 1.0, 0.0, 0.1);
 
@@ -120,6 +131,12 @@ glm::vec3 up(0.0, 1.0, 0.0);
 // Indicates if the rotation is enabled
 bool light_rotation = false;
 bool object_rotation = false;
+
+// Indicates if the ambient is the only active lighting
+bool ambient_only = true;
+
+// Indicates if the slice map debug view is enabled
+bool debug_slice_map = false;
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -216,7 +233,7 @@ void CreateMaterialsBuffer() {
 
   // OBJECT_MATERIAL
   materials.Add({0.80, 0.80, 0.80});
-  materials.Add({0.50, 0.50, 0.50});
+  materials.Add({1.00, 1.00, 1.00});
   materials.Add({0.50, 0.50, 0.50});
   materials.Add(16.0f);
   materials.FinishChunk();
@@ -285,7 +302,7 @@ void UpdateLightsBuffer() {
     lights.Clear();
 
   lights.Add({0.2, 0.2, 0.2});
-  lights.Add(1);
+  lights.Add(ambient_only ? 0 : 1);
   lights.FinishChunk();
 
   auto diffuse = glm::vec3(0.7, 0.7, 0.7);
@@ -346,6 +363,12 @@ void UpdateMatrices() {
   auto ratio = (float)window_w / (float)window_h;
   projection = glm::perspective(glm::radians(60.0f), ratio, NEAR, FAR);
   UpdateObjectMatrices();
+}
+
+// Creates the mapping matrix
+void CreateMappingMatrix() {
+  mapping_matrix = glm::scale(glm::translate(glm::vec3(0.5, 0.5, 0.5)),
+                              glm::vec3(0.5, 0.5, 0.5));
 }
 
 // Loads the global opengl configuration
@@ -419,6 +442,16 @@ void RenderLighting() {
   lightpass_shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
   lightpass_shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
 
+  auto &slice_map_texts  = voxel_framebuffer.GetTextures();
+  for (int i = 0; i < 8; ++i) {
+    auto name = "slice_map[" + std::to_string(i) + "]";
+    lightpass_shader.SetTexture2D(name, 3 + i, slice_map_texts[i]);
+  }
+
+  lightpass_shader.SetUniform("projectionmapping", mapping_matrix * projection);
+  lightpass_shader.SetUniform("near", NEAR);
+  lightpass_shader.SetUniform("far", FAR);
+
   screen_quad.DrawElements(GL_QUADS);
 
   lightpass_shader.Disable();
@@ -427,12 +460,12 @@ void RenderLighting() {
 // Display callback, renders the scene
 void Render() {
   RenderSliceMap();
-#ifdef DEBUG_SLICE_MAP
-  RenderSliceForDebug();
-#else
-  RenderGeometry();
-  RenderLighting();
-#endif
+  if (debug_slice_map) {
+    RenderSliceForDebug();
+  } else {
+    RenderGeometry();
+    RenderLighting();
+  }
 }
 
 // Measures the frames per second (and prints in the terminal)
@@ -441,6 +474,7 @@ void ComputeFPS() {
   static int frames = 0;
   double curr = glfwGetTime();
   if (curr - last > 1.0) {
+    printf("                    \r");
     printf("fps: %d\r", frames);
     fflush(stdout);
     last += 1.0;
@@ -496,6 +530,12 @@ void Keyboard(GLFWwindow *window, int key, int scancode, int action, int mods) {
       break;
     case GLFW_KEY_O:
       object_rotation = !object_rotation;
+      break;
+    case GLFW_KEY_A:
+      ambient_only = !ambient_only;
+      break;
+    case GLFW_KEY_D:
+      debug_slice_map = !debug_slice_map;
       break;
     default:
       break;
@@ -571,6 +611,8 @@ void InitApplication() {
   CreateMaterialsBuffer();
   LoadScreenQuad();
   LoadObjectMesh();
+  puts(HELP_TEXT);
+  CreateMappingMatrix();
 }
 
 // Application main loop
@@ -586,7 +628,7 @@ void MainLoop(GLFWwindow *window) {
   };
 }
 
-// Initialization
+// Main function
 int main(int argc, char *argv[]) {
   auto window = InitGLFW(argc, argv);
   InitGLEW();
