@@ -50,7 +50,7 @@ enum MaterialID { OBJECT_MATERIAL };
 
 // Near and far planes
 const float NEAR = 0.1;
-const float FAR = 5.0;
+const float FAR = 10.0;
 
 // The main Object path
 const char *OBJECT_PATH = "data/dragon.obj";
@@ -58,9 +58,13 @@ const char *OBJECT_PATH = "data/dragon.obj";
 // Rotation speed
 const float ROTATION_SPEED = 100.0f;
 
+// Volume resolution
+const int VOLUME_RESOLUTION = 1024;
+
 // Description of the program controls
 const char *HELP_TEXT =
 "Controls:\n"
+"  q: quit\n"
 "  a: enables only the ambient lighting\n"
 "  d: slice map debug view\n"
 "  l: rotates the light\n"
@@ -111,7 +115,8 @@ Texture1D voxel_depth_lut;
 
 // Global matrices
 glm::mat4 view;
-glm::mat4 projection;
+glm::mat4 ortho_projection;
+glm::mat4 perspective_projection;
 
 // Model matrices
 glm::mat4 light_model;
@@ -167,7 +172,7 @@ void LoadFramebuffer() {
 
 // Creates the framebuffer used for voxelization
 void LoadSliceMap() {
-  voxel_framebuffer.Init(window_w, window_h);
+  voxel_framebuffer.Init(VOLUME_RESOLUTION, VOLUME_RESOLUTION);
   for (int i = 0; i < 8; ++i) {
     voxel_framebuffer.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER,
                                       GL_UNSIGNED_INT);
@@ -329,8 +334,8 @@ void UpdateLightsBuffer() {
   lights.SendToDevice();
 }
 
-// Creates the object instances matrices
-void UpdateObjectMatrices() {
+// Updates the objects matrices
+void UpdateObjectMatrices(glm::mat4 projection) {
   // Buffer configuration:
   // struct Matrices {
   //     mat4 mvp;
@@ -357,18 +362,19 @@ void UpdateObjectMatrices() {
   object_matrices.SendToDevice();
 }
 
-// Updates the variables that depend on the model, view and projection
-void UpdateMatrices() {
+// Updates the view matrix
+void UpdateViewMatrix() {
   view = glm::lookAt(eye, center, up) * manipulator.GetMatrix();
-  auto ratio = (float)window_w / (float)window_h;
-  projection = glm::perspective(glm::radians(60.0f), ratio, NEAR, FAR);
-  UpdateObjectMatrices();
 }
 
-// Creates the mapping matrix
-void CreateMappingMatrix() {
+// Creates the mapping and projections matrices
+void CreateMatrices() {
   mapping_matrix = glm::scale(glm::translate(glm::vec3(0.5, 0.5, 0.5)),
                               glm::vec3(0.5, 0.5, 0.5));
+  ortho_projection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, NEAR, FAR);
+  auto ratio = (float)window_w / (float)window_h;
+  perspective_projection =
+      glm::perspective(glm::radians(60.0f), ratio, NEAR, FAR);
 }
 
 // Loads the global opengl configuration
@@ -378,10 +384,11 @@ void LoadGlobalConfiguration() {
   glEnable(GL_MULTISAMPLE);
 }
 
-// Creates the slice map
+// Renders the slice map (voxelization step)
 void RenderSliceMap() {
-  glPushAttrib(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+  glPushAttrib(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_VIEWPORT_BIT);
   voxel_framebuffer.Bind();
+  glViewport(0, 0, 1024, 1024);
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_COLOR_LOGIC_OP);
   glLogicOp(GL_XOR);
@@ -389,8 +396,10 @@ void RenderSliceMap() {
   voxelization_shader.Enable();
   voxelization_shader.SetUniform("near", NEAR);
   voxelization_shader.SetUniform("far", FAR);
-  voxelization_shader.SetTexture1D("voxel_depth_lut", 0, voxel_depth_lut.GetId());
-  voxelization_shader.SetUniformBuffer("MatricesBlock", 0, object_matrices.GetId());
+  voxelization_shader.SetTexture1D("voxel_depth_lut", 0,
+                                   voxel_depth_lut.GetId());
+  voxelization_shader.SetUniformBuffer("MatricesBlock", 0,
+                                       object_matrices.GetId());
   for (auto& mesh : object_meshes) {
     mesh.DrawElements(GL_TRIANGLES);
   }
@@ -448,7 +457,10 @@ void RenderLighting() {
     lightpass_shader.SetTexture2D(name, 3 + i, slice_map_texts[i]);
   }
 
-  lightpass_shader.SetUniform("projectionmapping", mapping_matrix * projection);
+  auto slice_map_matrix = mapping_matrix * ortho_projection;
+  lightpass_shader.SetUniform("slice_map_matrix", slice_map_matrix);
+  lightpass_shader.SetUniform("slice_map_matrix_it",
+      glm::transpose(glm::inverse(slice_map_matrix)));
   lightpass_shader.SetUniform("near", NEAR);
   lightpass_shader.SetUniform("far", FAR);
 
@@ -457,9 +469,11 @@ void RenderLighting() {
   lightpass_shader.Disable();
 }
 
-// Display callback, renders the scene
+// Renders the scene
 void Render() {
+  UpdateObjectMatrices(ortho_projection);
   RenderSliceMap();
+  UpdateObjectMatrices(perspective_projection);
   if (debug_slice_map) {
     RenderSliceForDebug();
   } else {
@@ -494,7 +508,6 @@ void Resize(GLFWwindow *window) {
   window_h = height;
   glViewport(0, 0, width, height);
   geom_framebuffer.Resize(width, height);
-  voxel_framebuffer.Resize(width, height);
 }
 
 // Called each frame
@@ -611,8 +624,8 @@ void InitApplication() {
   CreateMaterialsBuffer();
   LoadScreenQuad();
   LoadObjectMesh();
+  CreateMatrices();
   puts(HELP_TEXT);
-  CreateMappingMatrix();
 }
 
 // Application main loop
@@ -620,7 +633,7 @@ void MainLoop(GLFWwindow *window) {
   while (!glfwWindowShouldClose(window)) {
     Idle();
     Resize(window);
-    UpdateMatrices();
+    UpdateViewMatrix();
     Render();
     ComputeFPS();
     glfwSwapBuffers(window);

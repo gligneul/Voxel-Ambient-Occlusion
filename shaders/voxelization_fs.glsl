@@ -40,10 +40,10 @@ in vec3 frag_normal;
 out uvec4 voxels[8];
 
 void main() {
-  //    float z_vs = 1 / ((1 / far - 1 / near) * z_ws + 1 / near);
-  //    float z = (z_vs - near) / (far - near);
-  float Z = gl_FragCoord.z;
-  float z = -(near * Z) / (far * Z - far - near * Z);
+  // depth coordinate for perspective projection matrix
+  //float Z = gl_FragCoord.z;
+  //float z = -(near * Z) / (far * Z - far - near * Z);
+  float z = gl_FragCoord.z;
   float slice_postion = z * 8;
   int colorbuffer_idx = int(slice_postion);
   for (int i = 0; i < colorbuffer_idx; ++i)
