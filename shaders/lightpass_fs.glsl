@@ -67,9 +67,15 @@ uniform mat4 slice_map_matrix;
 // Slice map matrix inverse transpose
 uniform mat4 slice_map_matrix_it;
 
-// Near and far planes used in slice map creation
-uniform float near;
-uniform float far;
+// Enables ambient occlusion debug
+uniform bool ambient_occlusion_debug;
+
+// Rays buffer object
+const int MAX_RAYS = 256;
+const int N_RAYS = 32;
+const int MAX_STEPS = 5;
+const int VOXELS_PER_STEP = 1;
+layout(std140) uniform RaysBlock { vec3 rays[MAX_RAYS]; };
 
 // Screen texture coordinates
 in vec2 frag_textcoord;
@@ -86,8 +92,6 @@ vec3 multmatrix(mat4 matrix, vec3 vector) {
 // Given the position in slicemap space, obtains the voxel value
 // True means that the voxel is active
 bool get_voxel(vec3 position) {
-  //float Z = position.z;
-  //float z = -(near * Z) / (far * Z - far - near * Z);
   float z = position.z;
   float slice_position = z * 8;
   uvec4 column = texture(slice_map[int(slice_position)], position.xy);
@@ -140,18 +144,56 @@ vec3 compute_shading(Light L, Material M, vec3 normal, vec3 position) {
   return spot_intensity * (diffuse + specular);
 }
 
-// Computes the ambient occlusion
+// Returns true if the ray hit something, else returns false
+// Also returns the distance that the ray traveled
+// The traveled_dist must be set outside of the function
+bool march_ray(vec3 start, vec3 ray, float step_size, float max_dist,
+               inout float traveled_dist) {
+  vec3 curr_pos = start;
+  vec3 ray_step = ray * step_size;
+  while (traveled_dist < max_dist) {
+    if (get_voxel(curr_pos)) {
+      return true;
+    }
+    traveled_dist += step_size;
+    curr_pos += ray_step;
+  }
+  return false;
+}
+
+// Computes the ambient occlusion factor
 float compute_ambient_occlusion(vec3 normal, vec3 position) {
-  vec3 pos_sms = multmatrix(slice_map_matrix, position);
-  vec3 normal_sms = (slice_map_matrix_it * vec4(normal, 1)).xyz;
-  float step_size = sqrt(3.0) / (2.0 * 1024.0);
-  return get_voxel(pos_sms + normal_sms * step_size) ? 10 : 0;
+  float step_size = VOXELS_PER_STEP * sqrt(3.0) / 1024.0;
+  float max_dist = MAX_STEPS * step_size;
+  vec3 position_sm = multmatrix(slice_map_matrix, position);
+  vec3 normal_sm = normalize((slice_map_matrix_it * vec4(normal, 1)).xyz);
+  int n_rays_used = 0;
+  float acc_factor = 0;
+
+  for (int i = 0; i < N_RAYS; ++i) {
+    vec3 ray = rays[i];
+    float angle = dot(ray, normal_sm);
+    if (angle < 0.3) continue;
+    float d0 = step_size * (sqrt(3.0) / 2.0) / angle;
+    vec3 start = position_sm + ray * d0;
+    float traveled_dist = d0;
+    bool hit = march_ray(start, ray, step_size, max_dist, traveled_dist);
+    if (hit) {
+      acc_factor += (1 - traveled_dist / max_dist) * angle;
+    }
+    n_rays_used++;
+  }
+
+  if (n_rays_used != 0)
+    return acc_factor / n_rays_used;
+  else
+    return 0;
 }
 
 // Compute the ambient lighting
 vec3 compute_ambient(Material M, vec3 normal, vec3 position) {
   float occlusion_factor = compute_ambient_occlusion(normal, position);
-  return M.ambient * global_ambient * occlusion_factor;
+  return M.ambient * global_ambient * (1 - occlusion_factor);
 }
 
 // Computes the final fragment color
@@ -163,6 +205,11 @@ void main() {
   }
   vec3 position = texture(position_sampler, frag_textcoord).xyz;
   vec3 normal = texture(normal_sampler, frag_textcoord).xyz;
+  if (ambient_occlusion_debug) {
+    float o = 1 - compute_ambient_occlusion(normal, position);
+    color = vec3(o, o, o);
+    return;
+  }
   Material M = materials[material];
   vec3 acc_color = vec3(0, 0, 0);
   for (int i = 0; i < n_lights; ++i) {

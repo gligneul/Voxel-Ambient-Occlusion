@@ -82,6 +82,11 @@ void ShaderProgram::SetAttribLocation(const char* name, unsigned int location) {
   glBindAttribLocation(program_, location, name);
 }
 
+void ShaderProgram::SetUniform(const std::string& name, bool value) {
+  GLuint location = glGetUniformLocation(program_, name.c_str());
+  glUniform1i(location, value);
+}
+
 void ShaderProgram::SetUniform(const std::string& name, int value) {
   GLuint location = glGetUniformLocation(program_, name.c_str());
   glUniform1i(location, value);

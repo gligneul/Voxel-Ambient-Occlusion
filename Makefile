@@ -26,7 +26,7 @@ cc=g++
 opt=-g -O0
 iflags=-I./lib
 cflags=-Wall -Werror -std=c++11 $(shell pkg-config --cflags glfw3)
-lflags=-lGLEW $(shell pkg-config --static --libs glfw3)
+lflags=-lGLEW -lm $(shell pkg-config --static --libs glfw3)
 src=$(wildcard *.cpp)
 obj=$(patsubst %.cpp,%.o,$(src))
 libobjs=$(patsubst %.cpp,%.o,$(wildcard lib/*.cpp))

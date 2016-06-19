@@ -23,6 +23,7 @@
  */
 
 #include <cmath>
+#include <ctime>
 #include <cstdio>
 #include <vector>
 #include <iostream>
@@ -53,13 +54,16 @@ const float NEAR = 0.1;
 const float FAR = 10.0;
 
 // The main Object path
-const char *OBJECT_PATH = "data/dragon.obj";
+const char *OBJECT_PATH = "data/sdragon.obj";
 
 // Rotation speed
 const float ROTATION_SPEED = 100.0f;
 
 // Volume resolution
 const int VOLUME_RESOLUTION = 1024;
+
+// Number of rays used in the Monte Carlo integration
+const int N_RAYS = 256;
 
 // Description of the program controls
 const char *HELP_TEXT =
@@ -100,6 +104,9 @@ UniformBuffer lights;
 
 // Scene objects matrices
 UniformBuffer object_matrices;
+
+// Uniformely distributed vectors arround a sphere
+UniformBuffer rays;
 
 // The main object meshes
 std::vector<VertexArray> object_meshes;
@@ -220,6 +227,25 @@ void CreateVoxelDepthLUT() {
                               GL_UNSIGNED_INT);
 }
 
+// Creates the rays uniform buffer
+void CreateRays() {
+  // Buffer configuration
+  // layout(std140) uniform RaysBlock { vec3 rays[N_RAYS]; };
+
+  // Generates an random float in [-1, 1]
+  srand(time(NULL));
+  auto RandomFloat = []() {
+    return -1 + 2 * (float)rand() / (float)RAND_MAX;
+  };
+
+  rays.Init();
+  for (int i = 0; i < N_RAYS; ++i) {
+    glm::vec3 random_vec(RandomFloat(), RandomFloat(), RandomFloat());
+    rays.Add(glm::normalize(random_vec));
+  }
+  rays.SendToDevice();
+}
+
 // Loads the materials
 void CreateMaterialsBuffer() {
   // Buffer configuration
@@ -238,7 +264,7 @@ void CreateMaterialsBuffer() {
 
   // OBJECT_MATERIAL
   materials.Add({0.80, 0.80, 0.80});
-  materials.Add({1.00, 1.00, 1.00});
+  materials.Add({0.50, 0.50, 0.50});
   materials.Add({0.50, 0.50, 0.50});
   materials.Add(16.0f);
   materials.FinishChunk();
@@ -306,11 +332,11 @@ void UpdateLightsBuffer() {
   else
     lights.Clear();
 
-  lights.Add({0.2, 0.2, 0.2});
-  lights.Add(ambient_only ? 0 : 1);
+  lights.Add({0.5, 0.5, 0.5});
+  lights.Add(1);
   lights.FinishChunk();
 
-  auto diffuse = glm::vec3(0.7, 0.7, 0.7);
+  auto diffuse = glm::vec3(0.5, 0.5, 0.5);
   auto specular = glm::vec3(0.5, 0.5, 0.5);
   auto is_spot = false;
   auto spot_direction = glm::vec3(0.0, -1.0, 0.0);
@@ -394,8 +420,6 @@ void RenderSliceMap() {
   glLogicOp(GL_XOR);
   glClear(GL_COLOR_BUFFER_BIT);
   voxelization_shader.Enable();
-  voxelization_shader.SetUniform("near", NEAR);
-  voxelization_shader.SetUniform("far", FAR);
   voxelization_shader.SetTexture1D("voxel_depth_lut", 0,
                                    voxel_depth_lut.GetId());
   voxelization_shader.SetUniformBuffer("MatricesBlock", 0,
@@ -450,6 +474,7 @@ void RenderLighting() {
 
   lightpass_shader.SetUniformBuffer("MaterialsBlock", 0, materials.GetId());
   lightpass_shader.SetUniformBuffer("LightsBlock", 1, lights.GetId());
+  lightpass_shader.SetUniformBuffer("RaysBlock", 2, rays.GetId());
 
   auto &slice_map_texts  = voxel_framebuffer.GetTextures();
   for (int i = 0; i < 8; ++i) {
@@ -461,8 +486,7 @@ void RenderLighting() {
   lightpass_shader.SetUniform("slice_map_matrix", slice_map_matrix);
   lightpass_shader.SetUniform("slice_map_matrix_it",
       glm::transpose(glm::inverse(slice_map_matrix)));
-  lightpass_shader.SetUniform("near", NEAR);
-  lightpass_shader.SetUniform("far", FAR);
+  lightpass_shader.SetUniform("ambient_occlusion_debug", ambient_only);
 
   screen_quad.DrawElements(GL_QUADS);
 
@@ -621,6 +645,7 @@ void InitApplication() {
   LoadSliceMap();
   LoadShaders();
   CreateVoxelDepthLUT();
+  CreateRays();
   CreateMaterialsBuffer();
   LoadScreenQuad();
   LoadObjectMesh();

@@ -25,10 +25,6 @@
 
 #version 450
 
-// Near and far planes
-uniform float near;
-uniform float far;
-
 // Voxel depth LUT
 uniform usampler1D voxel_depth_lut;
 
@@ -40,9 +36,6 @@ in vec3 frag_normal;
 out uvec4 voxels[8];
 
 void main() {
-  // depth coordinate for perspective projection matrix
-  //float Z = gl_FragCoord.z;
-  //float z = -(near * Z) / (far * Z - far - near * Z);
   float z = gl_FragCoord.z;
   float slice_postion = z * 8;
   int colorbuffer_idx = int(slice_postion);
