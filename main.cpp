@@ -51,10 +51,10 @@ enum MaterialID { OBJECT_MATERIAL };
 
 // Near and far planes
 const float NEAR = 0.1;
-const float FAR = 10.0;
+const float FAR = 5.0;
 
 // The main Object path
-const char *OBJECT_PATH = "data/sdragon.obj";
+const char *OBJECT_PATH = "data/dragon.obj";
 
 // Rotation speed
 const float ROTATION_SPEED = 100.0f;
@@ -139,6 +139,10 @@ glm::vec4 light_position(10.0, 1.0, 0.0, 0.1);
 glm::vec3 eye(0.0, 0.0, 2.0);
 glm::vec3 center(0.0, 0.0, 0.0);
 glm::vec3 up(0.0, 1.0, 0.0);
+
+// The center and radius of a sphere that covers the rendered object
+glm::vec3 scene_center(0, 0, 0);
+float scene_radius = 0;
 
 // Indicates if the rotation is enabled
 bool light_rotation = false;
@@ -293,6 +297,18 @@ void LoadMesh(VertexArray *vao, tinyobj::mesh_t *mesh) {
   vao->AddArray(1, mesh->normals.data(), mesh->normals.size(), 3);
 }
 
+// Updates the scene radius given an mesh
+void UpdateSceneRadius(tinyobj::mesh_t *mesh) {
+  auto& vertices = mesh->positions;
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+    float x = vertices[i];
+    float y = vertices[i + 1];
+    float z = vertices[i + 2];
+    float radius = sqrt(x * x + y * y + z * z);
+    scene_radius = std::max(scene_radius, radius);
+  }
+}
+
 // Loads the object mesh
 void LoadObjectMesh() {
   std::vector<tinyobj::shape_t> shapes;
@@ -305,6 +321,7 @@ void LoadObjectMesh() {
   object_meshes.resize(shapes.size());
   for (size_t i = 0; i < shapes.size(); ++i) {
     LoadMesh(&object_meshes[i], &shapes[i].mesh);
+    UpdateSceneRadius(&shapes[i].mesh);
   }
 }
 
@@ -393,11 +410,25 @@ void UpdateViewMatrix() {
   view = glm::lookAt(eye, center, up) * manipulator.GetMatrix();
 }
 
+// Updates the ortho projection matrix used in the voxelization
+void UpdateOrthoMatrix() {
+  auto MultMatrix = [](glm::mat4 mat, glm::vec3 vec) -> glm::vec3 {
+    auto v = mat * glm::vec4(vec, 1);
+    return glm::vec3(v) / v.w;
+  };
+  auto c = MultMatrix(view, scene_center);
+  auto radius =
+      MultMatrix(view, glm::vec3(scene_radius, 0, 0) + scene_center) - c;
+  auto r = glm::length(radius);
+  ortho_projection = glm::ortho(c.x - r, c.x + r,
+                                c.y - r, c.y + r,
+                                -c.z - r, -c.z + r);
+}
+
 // Creates the mapping and projections matrices
 void CreateMatrices() {
   mapping_matrix = glm::scale(glm::translate(glm::vec3(0.5, 0.5, 0.5)),
                               glm::vec3(0.5, 0.5, 0.5));
-  ortho_projection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, NEAR, FAR);
   auto ratio = (float)window_w / (float)window_h;
   perspective_projection =
       glm::perspective(glm::radians(60.0f), ratio, NEAR, FAR);
@@ -532,6 +563,7 @@ void Resize(GLFWwindow *window) {
   window_h = height;
   glViewport(0, 0, width, height);
   geom_framebuffer.Resize(width, height);
+  CreateMatrices();
 }
 
 // Called each frame
@@ -659,6 +691,7 @@ void MainLoop(GLFWwindow *window) {
     Idle();
     Resize(window);
     UpdateViewMatrix();
+    UpdateOrthoMatrix();
     Render();
     ComputeFPS();
     glfwSwapBuffers(window);

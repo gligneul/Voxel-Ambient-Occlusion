@@ -72,8 +72,8 @@ uniform bool ambient_occlusion_debug;
 
 // Rays buffer object
 const int MAX_RAYS = 256;
-const int N_RAYS = 32;
-const int MAX_STEPS = 5;
+const int N_RAYS = 64;
+const int MAX_STEPS = 10;
 const int VOXELS_PER_STEP = 1;
 layout(std140) uniform RaysBlock { vec3 rays[MAX_RAYS]; };
 
