@@ -74,9 +74,17 @@ uniform bool ambient_occlusion_debug;
 layout(std140) uniform RaysBlock { vec3 rays[256]; };
 
 // Ambient occlusion parameters
+const float OCCLUSION_FACTOR = 2.0;
 uniform float max_distance;
 uniform int n_rays;
 uniform float step_size;
+uniform int n_volume_buffers;
+
+// Visualization mode
+const int MODE_FULL_LIGHTING = 0;
+const int MODE_DIFFUSE_ONLY = 1;
+const int MODE_OCCLUSION_DEBUG = 2;
+uniform int mode;
 
 // Screen texture coordinates
 in vec2 frag_textcoord;
@@ -99,7 +107,7 @@ vec3 multnormal(mat4 matrix, vec3 normal) {
 // True means that the voxel is active
 bool get_voxel(vec3 position) {
   float z = position.z;
-  float slice_position = z * 8;
+  float slice_position = z * n_volume_buffers;
   uvec4 column = texture(slice_map[int(slice_position)], position.xy);
   int voxel_idx = int(fract(slice_position) * 128);
   uint voxel = (column[voxel_idx / 32] >> voxel_idx % 32) & 1;
@@ -226,9 +234,8 @@ float compute_ambient_occlusion(vec3 normal_vs, vec3 position_vs) {
 }
 
 // Compute the ambient lighting
-vec3 compute_ambient(Material M, vec3 normal, vec3 position) {
-  float occlusion_factor = compute_ambient_occlusion(normal, position);
-  return M.ambient * global_ambient * (1 - occlusion_factor);
+vec3 compute_ambient(Material M) {
+  return M.ambient * global_ambient;
 }
 
 // Computes the final fragment color
@@ -240,18 +247,23 @@ void main() {
   }
   vec3 position = texture(position_sampler, frag_textcoord).xyz;
   vec3 normal = texture(normal_sampler, frag_textcoord).xyz;
-  if (ambient_occlusion_debug) {
-    float o = 1 - compute_ambient_occlusion(normal, position);
-    color = vec3(o, o, o);
-    return;
-  }
   Material M = materials[material];
+
   vec3 acc_color = vec3(0, 0, 0);
   for (int i = 0; i < n_lights; ++i) {
     Light L = lights[i];
     acc_color += compute_shading(L, M, normal, position);
   }
-  vec3 ambient = compute_ambient(M, normal, position);
-  color = acc_color + ambient;
+  vec3 ambient = compute_ambient(M);
+  float occlusion =
+      1 - OCCLUSION_FACTOR * compute_ambient_occlusion(normal, position);
+
+  if (mode == MODE_FULL_LIGHTING) {
+    color = acc_color + ambient * occlusion;
+  } else if (mode == MODE_DIFFUSE_ONLY) {
+    color = acc_color + ambient;
+  } else {
+    color = vec3(occlusion, occlusion, occlusion);
+  }
 }
 

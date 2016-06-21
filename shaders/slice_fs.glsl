@@ -28,6 +28,9 @@
 // Transversal slice position
 const float x_slice = 0.5;
 
+// Number of buffers used
+uniform int n_volume_buffers;
+
 // Slice map
 uniform usampler2D slice_map[8];
 
@@ -38,7 +41,7 @@ in vec2 frag_textcoord;
 out vec3 color;
 
 void main() {
-  float slice_position = frag_textcoord.x * 8;
+  float slice_position = frag_textcoord.x * n_volume_buffers;
   vec2 column_coord = vec2(x_slice, frag_textcoord.y);
   uvec4 column = texture(slice_map[int(slice_position)], column_coord);
   int voxel_idx = int(fract(slice_position) * 128);

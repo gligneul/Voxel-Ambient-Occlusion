@@ -28,6 +28,9 @@
 // Voxel depth LUT
 uniform usampler1D voxel_depth_lut;
 
+// Number of buffers used
+uniform int n_volume_buffers;
+
 // Input from vertex shader
 in vec3 frag_position;
 in vec3 frag_normal;
@@ -36,12 +39,12 @@ in vec3 frag_normal;
 out uvec4 voxels[8];
 
 void main() {
-  float z = gl_FragCoord.z;
-  float slice_postion = z * 8;
+  float slice_postion = gl_FragCoord.z * n_volume_buffers;
   int colorbuffer_idx = int(slice_postion);
   for (int i = 0; i < colorbuffer_idx; ++i)
     voxels[i] = uvec4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
   voxels[colorbuffer_idx] = texture(voxel_depth_lut, fract(slice_postion));
-  for (int i = colorbuffer_idx + 1; i < 8; ++i) voxels[i] = uvec4(0, 0, 0, 0);
+  for (int i = colorbuffer_idx + 1; i < n_volume_buffers; ++i)
+    voxels[i] = uvec4(0, 0, 0, 0);
 }
 

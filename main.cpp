@@ -43,9 +43,6 @@
 #include "VertexArray.h"
 #include "Texture1D.h"
 
-// Enables the debug view for the voxelization algorithm
-#define DEBUG_SLICE_MAP
-
 // Materials
 enum MaterialID { OBJECT_MATERIAL };
 
@@ -63,8 +60,8 @@ const float ROTATION_SPEED = 70.0f;
 const char *HELP_TEXT =
 "Controls:\n"
 "  q: quit\n"
-"  a: enables only the ambient lighting\n"
-"  d: slice map debug view\n"
+"  a: ambient occlusion debug\n"
+"  s: voxelization debug (renders a slice perpendicular to the projection plane)\n"
 "  l: rotates the light\n"
 "  o: rotates the object\n";
 
@@ -140,26 +137,32 @@ float scene_radius = 0;
 
 //---------------AMBIENT OCCLUSION PARAMETERS---------------
 // Volume resolution
-const int n_buffers = 8;
-const int volume_resolution = 128 * n_buffers;
+const int n_volume_buffers = 8;
+const int volume_resolution = 128 * n_volume_buffers;
 
 // Number of rays used in the Monte Carlo integration
 const int n_rays = 64;
 
 // The max distance traveled by each ray
 const float step_size = sqrt(3.0f) / (float) volume_resolution;
-const int max_steps = n_buffers * 2;
+const int max_steps = n_volume_buffers * 2;
 const float max_distance = max_steps * step_size;
 
 // Indicates if the rotation is enabled
 bool light_rotation = false;
 bool object_rotation = false;
 
-// Indicates if the ambient is the only active lighting
-bool ambient_only = true;
-
 // Indicates if the slice map debug view is enabled
 bool debug_slice_map = false;
+
+// Execution mode
+enum Mode {
+  MODE_FULL_LIGHTING,
+  MODE_DIFFUSE_ONLY,
+  MODE_OCCLUSION_DEBUG,
+  MODE_NUMBER,
+};
+Mode mode = MODE_FULL_LIGHTING;
 
 // Verifies the condition, if it fails, shows the error message and
 // exits the program
@@ -191,7 +194,7 @@ void LoadFramebuffer() {
 // Creates the framebuffer used for voxelization
 void LoadSliceMap() {
   voxel_framebuffer.Init(volume_resolution, volume_resolution);
-  for (int i = 0; i < 8; ++i) {
+  for (int i = 0; i < n_volume_buffers; ++i) {
     voxel_framebuffer.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER,
                                       GL_UNSIGNED_INT);
   }
@@ -449,7 +452,6 @@ void CreateMatrices() {
 // Loads the global opengl configuration
 void LoadGlobalConfiguration() {
   glEnable(GL_DEPTH_TEST);
-  glfwWindowHint(GLFW_SAMPLES, 8);
   glEnable(GL_MULTISAMPLE);
 }
 
@@ -457,7 +459,7 @@ void LoadGlobalConfiguration() {
 void RenderSliceMap() {
   glPushAttrib(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_VIEWPORT_BIT);
   voxel_framebuffer.Bind();
-  glViewport(0, 0, 1024, 1024);
+  glViewport(0, 0, volume_resolution, volume_resolution);
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_COLOR_LOGIC_OP);
   glLogicOp(GL_XOR);
@@ -467,6 +469,7 @@ void RenderSliceMap() {
                                    voxel_depth_lut.GetId());
   voxelization_shader.SetUniformBuffer("MatricesBlock", 0,
                                        object_matrices.GetId());
+  voxelization_shader.SetUniform("n_volume_buffers", n_volume_buffers);
   for (auto& mesh : object_meshes) {
     mesh.DrawElements(GL_TRIANGLES);
   }
@@ -480,10 +483,11 @@ void RenderSliceForDebug() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   slice_shader.Enable();
   auto &texts = voxel_framebuffer.GetTextures();
-  for (int i = 0; i < 8; ++i) {
+  for (int i = 0; i < n_volume_buffers; ++i) {
     auto name = "slice_map[" + std::to_string(i) + "]";
     slice_shader.SetTexture2D(name, i, texts[i]);
   }
+  slice_shader.SetUniform("n_volume_buffers", n_volume_buffers);
   screen_quad.DrawElements(GL_QUADS);
   slice_shader.Disable();
 }
@@ -529,10 +533,11 @@ void RenderLighting() {
   lightpass_shader.SetUniform("slice_map_matrix", slice_map_matrix);
   lightpass_shader.SetUniform("slice_map_matrix_it",
       glm::transpose(glm::inverse(slice_map_matrix)));
-  lightpass_shader.SetUniform("ambient_occlusion_debug", ambient_only);
+  lightpass_shader.SetUniform("mode", mode);
   lightpass_shader.SetUniform("n_rays", n_rays);
   lightpass_shader.SetUniform("max_distance", max_distance);
   lightpass_shader.SetUniform("step_size", step_size);
+  lightpass_shader.SetUniform("n_volume_buffers", n_volume_buffers);
 
   screen_quad.DrawElements(GL_QUADS);
 
@@ -615,10 +620,19 @@ void Keyboard(GLFWwindow *window, int key, int scancode, int action, int mods) {
     case GLFW_KEY_O:
       object_rotation = !object_rotation;
       break;
-    case GLFW_KEY_A:
-      ambient_only = !ambient_only;
+    case GLFW_KEY_SPACE:
+      if (mode == MODE_DIFFUSE_ONLY)
+        mode = MODE_FULL_LIGHTING;
+      else if (mode == MODE_FULL_LIGHTING)
+        mode = MODE_DIFFUSE_ONLY;
       break;
-    case GLFW_KEY_D:
+    case GLFW_KEY_A:
+      if (mode == MODE_OCCLUSION_DEBUG)
+        mode = MODE_FULL_LIGHTING;
+      else
+        mode = MODE_OCCLUSION_DEBUG;
+      break;
+    case GLFW_KEY_S:
       debug_slice_map = !debug_slice_map;
       break;
     default:
