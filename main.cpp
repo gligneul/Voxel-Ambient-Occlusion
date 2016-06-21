@@ -54,16 +54,10 @@ const float NEAR = 0.1;
 const float FAR = 5.0;
 
 // The main Object path
-const char *OBJECT_PATH = "data/dragon.obj";
+const char *OBJECT_PATH = "data/sdragon.obj";
 
 // Rotation speed
-const float ROTATION_SPEED = 100.0f;
-
-// Volume resolution
-const int VOLUME_RESOLUTION = 1024;
-
-// Number of rays used in the Monte Carlo integration
-const int N_RAYS = 256;
+const float ROTATION_SPEED = 70.0f;
 
 // Description of the program controls
 const char *HELP_TEXT =
@@ -144,6 +138,19 @@ glm::vec3 up(0.0, 1.0, 0.0);
 glm::vec3 scene_center(0, 0, 0);
 float scene_radius = 0;
 
+//---------------AMBIENT OCCLUSION PARAMETERS---------------
+// Volume resolution
+const int n_buffers = 8;
+const int volume_resolution = 128 * n_buffers;
+
+// Number of rays used in the Monte Carlo integration
+const int n_rays = 64;
+
+// The max distance traveled by each ray
+const float step_size = sqrt(3.0f) / (float) volume_resolution;
+const int max_steps = n_buffers * 2;
+const float max_distance = max_steps * step_size;
+
 // Indicates if the rotation is enabled
 bool light_rotation = false;
 bool object_rotation = false;
@@ -183,7 +190,7 @@ void LoadFramebuffer() {
 
 // Creates the framebuffer used for voxelization
 void LoadSliceMap() {
-  voxel_framebuffer.Init(VOLUME_RESOLUTION, VOLUME_RESOLUTION);
+  voxel_framebuffer.Init(volume_resolution, volume_resolution);
   for (int i = 0; i < 8; ++i) {
     voxel_framebuffer.AddColorTexture(GL_RGBA32UI, GL_RGBA_INTEGER,
                                       GL_UNSIGNED_INT);
@@ -234,17 +241,22 @@ void CreateVoxelDepthLUT() {
 // Creates the rays uniform buffer
 void CreateRays() {
   // Buffer configuration
-  // layout(std140) uniform RaysBlock { vec3 rays[N_RAYS]; };
+  // layout(std140) uniform RaysBlock { vec3 rays[256]; };
 
-  // Generates an random float in [-1, 1]
+  // Generates an random float in [0, 1]
   srand(time(NULL));
   auto RandomFloat = []() {
-    return -1 + 2 * (float)rand() / (float)RAND_MAX;
+    return (float)rand() / (float)RAND_MAX;
   };
 
   rays.Init();
-  for (int i = 0; i < N_RAYS; ++i) {
-    glm::vec3 random_vec(RandomFloat(), RandomFloat(), RandomFloat());
+  for (int i = 0; i < n_rays; ++i) {
+    glm::vec3 random_vec;
+    do {
+      random_vec.x = 2 * RandomFloat() - 1;
+      random_vec.y = 2 * RandomFloat() - 1;
+      random_vec.z = RandomFloat();
+    } while (length(random_vec) > 1);
     rays.Add(glm::normalize(random_vec));
   }
   rays.SendToDevice();
@@ -518,6 +530,9 @@ void RenderLighting() {
   lightpass_shader.SetUniform("slice_map_matrix_it",
       glm::transpose(glm::inverse(slice_map_matrix)));
   lightpass_shader.SetUniform("ambient_occlusion_debug", ambient_only);
+  lightpass_shader.SetUniform("n_rays", n_rays);
+  lightpass_shader.SetUniform("max_distance", max_distance);
+  lightpass_shader.SetUniform("step_size", step_size);
 
   screen_quad.DrawElements(GL_QUADS);
 

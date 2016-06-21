@@ -71,11 +71,12 @@ uniform mat4 slice_map_matrix_it;
 uniform bool ambient_occlusion_debug;
 
 // Rays buffer object
-const int MAX_RAYS = 256;
-const int N_RAYS = 64;
-const int MAX_STEPS = 10;
-const int VOXELS_PER_STEP = 1;
-layout(std140) uniform RaysBlock { vec3 rays[MAX_RAYS]; };
+layout(std140) uniform RaysBlock { vec3 rays[256]; };
+
+// Ambient occlusion parameters
+uniform float max_distance;
+uniform int n_rays;
+uniform float step_size;
 
 // Screen texture coordinates
 in vec2 frag_textcoord;
@@ -87,6 +88,11 @@ out vec3 color;
 vec3 multmatrix(mat4 matrix, vec3 vector) {
   vec4 result_vector = matrix * vec4(vector, 1);
   return result_vector.xyz / result_vector.w;
+}
+
+// Multiplies a vec3 by a mat4 ignoring the w coordinate
+vec3 multnormal(mat4 matrix, vec3 normal) {
+  return normalize((matrix * vec4(normal, 1)).xyz);
 }
 
 // Given the position in slicemap space, obtains the voxel value
@@ -161,25 +167,54 @@ bool march_ray(vec3 start, vec3 ray, float step_size, float max_dist,
   return false;
 }
 
+// GLSL rotation about an arbitrary axis
+// http://www.neilmendoza.com/glsl-rotation-about-an-arbitrary-axis/
+mat3 create_rotation_matrix(vec3 axis, float s) {
+  float c = -sqrt(1 - s * s);
+  float oc = 1.0 - c;
+  return mat3(
+      oc * axis.x * axis.x + c,
+      oc * axis.x * axis.y - axis.z * s,
+      oc * axis.z * axis.x + axis.y * s,
+      oc * axis.x * axis.y + axis.z * s,
+      oc * axis.y * axis.y + c,
+      oc * axis.y * axis.z - axis.x * s,
+      oc * axis.z * axis.x - axis.y * s,
+      oc * axis.y * axis.z + axis.x * s,
+      oc * axis.z * axis.z + c);
+}
+
+// Computes the matrix to rotate the rays to the normal semihemisphere
+mat3 compute_hemisphere_rotation(vec3 normal) {
+  vec3 hemisphere_dir = vec3(0, 0, 1);
+  vec3 w = cross(normal, hemisphere_dir);
+  float lw = length(w);
+  if (lw < 0.05)
+    return mat3(1, 0, 0, 0, 1, 0, 0, 0, -1);
+  else
+    return create_rotation_matrix(normalize(w), lw);
+}
+
 // Computes the ambient occlusion factor
-float compute_ambient_occlusion(vec3 normal, vec3 position) {
-  float step_size = VOXELS_PER_STEP * sqrt(3.0) / 1024.0;
-  float max_dist = MAX_STEPS * step_size;
-  vec3 position_sm = multmatrix(slice_map_matrix, position);
-  vec3 normal_sm = normalize((slice_map_matrix_it * vec4(normal, 1)).xyz);
+float compute_ambient_occlusion(vec3 normal_vs, vec3 position_vs) {
+  vec3 position = multmatrix(slice_map_matrix, position_vs);
+  vec3 normal = multnormal(slice_map_matrix_it, normal_vs);
   int n_rays_used = 0;
   float acc_factor = 0;
 
-  for (int i = 0; i < N_RAYS; ++i) {
-    vec3 ray = rays[i];
-    float angle = dot(ray, normal_sm);
-    if (angle < 0.3) continue;
+  mat3 R = compute_hemisphere_rotation(normal);
+
+  for (int i = 0; i < n_rays; ++i) {
+    vec3 ray = R * rays[i];
+    float angle = dot(ray, normal);
+    if (angle < 0.1)
+      continue;
     float d0 = step_size * (sqrt(3.0) / 2.0) / angle;
-    vec3 start = position_sm + ray * d0;
+    vec3 start = position + ray * d0;
     float traveled_dist = d0;
-    bool hit = march_ray(start, ray, step_size, max_dist, traveled_dist);
+    bool hit = march_ray(start, ray, step_size, max_distance, traveled_dist);
     if (hit) {
-      acc_factor += (1 - traveled_dist / max_dist) * angle;
+      acc_factor += (1 - traveled_dist / max_distance) * angle;
     }
     n_rays_used++;
   }
