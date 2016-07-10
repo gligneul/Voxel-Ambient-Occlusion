@@ -166,6 +166,11 @@ bool march_ray(vec3 start, vec3 ray, float step_size, float max_dist,
   vec3 curr_pos = start;
   vec3 ray_step = ray * step_size;
   while (traveled_dist < max_dist) {
+    if (curr_pos.x < 0 || curr_pos.x > 1 ||
+        curr_pos.y < 0 || curr_pos.y > 1 ||
+        curr_pos.z < 0 || curr_pos.z > 1) {
+      return false;
+    }
     if (get_voxel(curr_pos)) {
       return true;
     }
@@ -197,7 +202,7 @@ mat3 compute_hemisphere_rotation(vec3 normal) {
   vec3 hemisphere_dir = vec3(0, 0, 1);
   vec3 w = cross(normal, hemisphere_dir);
   float lw = length(w);
-  if (lw < 0.05)
+  if (lw < 0.001)
     return mat3(1, 0, 0, 0, 1, 0, 0, 0, -1);
   else
     return create_rotation_matrix(normalize(w), lw);
@@ -217,7 +222,7 @@ float compute_ambient_occlusion(vec3 normal_vs, vec3 position_vs) {
     float angle = dot(ray, normal);
     if (angle < 0.1)
       continue;
-    float d0 = step_size * (sqrt(3.0) / 2.0) / angle;
+    float d0 = step_size * sqrt(3.0) / angle;
     vec3 start = position + ray * d0;
     float traveled_dist = d0;
     bool hit = march_ray(start, ray, step_size, max_distance, traveled_dist);

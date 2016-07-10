@@ -42,6 +42,10 @@ out vec3 color;
 
 void main() {
   float slice_position = frag_textcoord.x * n_volume_buffers;
+  if (slice_position < 0 || slice_position > n_volume_buffers) {
+    color = vec3(0, 0, 0);
+    return;
+  }
   vec2 column_coord = vec2(x_slice, frag_textcoord.y);
   uvec4 column = texture(slice_map[int(slice_position)], column_coord);
   int voxel_idx = int(fract(slice_position) * 128);

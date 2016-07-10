@@ -141,11 +141,12 @@ const int n_volume_buffers = 8;
 const int volume_resolution = 128 * n_volume_buffers;
 
 // Number of rays used in the Monte Carlo integration
-const int n_rays = 64;
+const int n_rays = 32;
 
 // The max distance traveled by each ray
-const float step_size = sqrt(3.0f) / (float) volume_resolution;
-const int max_steps = n_volume_buffers * 2;
+//const float step_size = sqrt(3.0f) / (float) volume_resolution;
+const float step_size = 1.0f / (float) volume_resolution;
+const int max_steps = n_volume_buffers * 20;
 const float max_distance = max_steps * step_size;
 
 // Indicates if the rotation is enabled
